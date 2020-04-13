@@ -47,12 +47,19 @@ import org.apache.rocketmq.remoting.common.RemotingUtil;
 
 public class RouteInfoManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
+    //NameServer 与 Broker 空闲时长，默认2分钟，在2分钟内Nameserver没有收到Broker的心跳包，则关闭该连接。
     private final static long BROKER_CHANNEL_EXPIRED_TIME = 1000 * 60 * 2;
+    //读写锁，保护下面的HashMap
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    //每个topic保存在那些Broker上面
     private final HashMap<String/* topic */, List<QueueData>> topicQueueTable;
+    //保存所有的Broker信息
     private final HashMap<String/* brokerName */, BrokerData> brokerAddrTable;
+    //集群信息，每个集群包含的Broker
     private final HashMap<String/* clusterName */, Set<String/* brokerName */>> clusterAddrTable;
+    //当前存活的broker
     private final HashMap<String/* brokerAddr */, BrokerLiveInfo> brokerLiveTable;
+    //Borker地址与过滤器的集合
     private final HashMap<String/* brokerAddr */, List<String>/* Filter Server */> filterServerTable;
 
     public RouteInfoManager() {

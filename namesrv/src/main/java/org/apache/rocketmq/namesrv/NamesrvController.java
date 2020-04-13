@@ -41,21 +41,24 @@ import org.apache.rocketmq.srvutil.FileWatchService;
 
 public class NamesrvController {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.NAMESRV_LOGGER_NAME);
-
+    //主要指定nameserver的相关配置目录属性
     private final NamesrvConfig namesrvConfig;
-
+    //Netty相关配置
     private final NettyServerConfig nettyServerConfig;
-
+    //线程池  执行定时任务
     private final ScheduledExecutorService scheduledExecutorService = Executors.newSingleThreadScheduledExecutor(new ThreadFactoryImpl(
         "NSScheduledThread"));
+    //KVConfig的管理器，读取或变更NameServer的配置属性，加载NamesrvConfig中配置的配置文件到内存，
+    //此类一个亮点就是使用轻量级的非线程安全容器，再结合读写锁对资源读写进行保护。尽最大程度提高线程的并发度。
     private final KVConfigManager kvConfigManager;
+    //路由信息管理
     private final RouteInfoManager routeInfoManager;
-
+    //远程调用管理，NettyRemotingServer就是这个的子类
     private RemotingServer remotingServer;
-
-    private BrokerHousekeepingService brokerHousekeepingService;
-
+    //用于通信
     private ExecutorService remotingExecutor;
+    //通道发送异常时的回调方法
+    private BrokerHousekeepingService brokerHousekeepingService;
 
     private Configuration configuration;
     private FileWatchService fileWatchService;
@@ -74,26 +77,29 @@ public class NamesrvController {
     }
 
     public boolean initialize() {
-
+        //加载kv配置
         this.kvConfigManager.load();
-
+        //启动netty
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.brokerHousekeepingService);
-
+        //给netty设置一个线程池，
+        // 该线程池提供给DefaultRequestProcessor类使用，DefaultRequestProcessor类实现具体的默认的请求命令处理。
         this.remotingExecutor =
             Executors.newFixedThreadPool(nettyServerConfig.getServerWorkerThreads(), new ThreadFactoryImpl("RemotingExecutorThread_"));
-
+        //进行上面remotingExecutor线程池的注册
         this.registerProcessor();
 
-        this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
+        //设置一个定时任务
+        this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
+            //每隔10s扫描broker,维护当前存活的Broker信息
             @Override
             public void run() {
                 NamesrvController.this.routeInfoManager.scanNotActiveBroker();
             }
         }, 5, 10, TimeUnit.SECONDS);
-
+        //设置一个定时任务
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
-
+            //每隔10s打印KVConfig信息。
             @Override
             public void run() {
                 NamesrvController.this.kvConfigManager.printAllPeriodically();

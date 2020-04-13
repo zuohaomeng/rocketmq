@@ -886,7 +886,7 @@ public class BrokerController {
             handleSlaveSynchronize(messageStoreConfig.getBrokerRole());
             this.registerBrokerAll(true, false, true);
         }
-
+        //设置一个定时任务，注册Broker
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
 
             @Override
