@@ -316,11 +316,13 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
      * @throws MQBrokerException if there is any error with broker.
      * @throws InterruptedException if the sending thread is interrupted.
      */
+    //发送同步消息
     @Override
     public SendResult send(
         Message msg) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         Validators.checkMessage(msg, this);
         msg.setTopic(withNamespace(msg.getTopic()));
+        //真正发送消息
         return this.defaultMQProducerImpl.send(msg);
     }
 
@@ -340,6 +342,7 @@ public class DefaultMQProducer extends ClientConfig implements MQProducer {
     public SendResult send(Message msg,
         long timeout) throws MQClientException, RemotingException, MQBrokerException, InterruptedException {
         msg.setTopic(withNamespace(msg.getTopic()));
+
         return this.defaultMQProducerImpl.send(msg, timeout);
     }
 
