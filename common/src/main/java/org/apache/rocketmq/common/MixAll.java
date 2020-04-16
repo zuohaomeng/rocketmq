@@ -44,6 +44,7 @@ import org.apache.rocketmq.common.help.FAQUrl;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 
+
 public class MixAll {
     public static final String ROCKETMQ_HOME_ENV = "ROCKETMQ_HOME";
     public static final String ROCKETMQ_HOME_PROPERTY = "rocketmq.home.dir";
@@ -147,7 +148,17 @@ public class MixAll {
 
         return 0;
     }
-
+     /**
+      * 将内容写到文件
+      * 安全写
+      * 1. 写到.tmp文件
+      * 2. 备份准备写入文件到.bak文件
+      * 3. 删除原文件，将.tmp修改成文件
+      *
+      * @param str 内容
+      * @param fileName 文件名
+       * @throws IOException 当IO发生异常时
+       */
     public static void string2File(final String str, final String fileName) throws IOException {
 
         String tmpFile = fileName + ".tmp";
@@ -165,7 +176,14 @@ public class MixAll {
         file = new File(tmpFile);
         file.renameTo(new File(fileName));
     }
-
+     /**
+      * 将内容写到文件
+      * 非安全写
+      *
+      * @param str 内容
+      * @param fileName 文件内容
+      * @throws IOException 当IO发生异常时
+      */
     public static void string2FileNotSafe(final String str, final String fileName) throws IOException {
         File file = new File(fileName);
         File fileParent = file.getParentFile();

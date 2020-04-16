@@ -21,11 +21,14 @@ import org.apache.rocketmq.common.constant.LoggerName;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 
+/**
+ * 配置管理
+ */
 public abstract class ConfigManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.COMMON_LOGGER_NAME);
-
+    //编码内容
     public abstract String encode();
-
+    //加载文件
     public boolean load() {
         String fileName = null;
         try {
@@ -44,9 +47,9 @@ public abstract class ConfigManager {
             return this.loadBak();
         }
     }
-
+    //配置文件地址
     public abstract String configFilePath();
-
+    //加载备份文件
     private boolean loadBak() {
         String fileName = null;
         try {
@@ -64,9 +67,9 @@ public abstract class ConfigManager {
 
         return true;
     }
-
+    //解码内容
     public abstract void decode(final String jsonString);
-
+    //持久化
     public synchronized void persist() {
         String jsonString = this.encode(true);
         if (jsonString != null) {

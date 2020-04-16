@@ -36,7 +36,9 @@ import org.apache.rocketmq.remoting.protocol.RemotingSerializable;
 public class ConsumerOffsetManager extends ConfigManager {
     private static final InternalLogger log = InternalLoggerFactory.getLogger(LoggerName.BROKER_LOGGER_NAME);
     private static final String TOPIC_GROUP_SEPARATOR = "@";
-
+    /**
+     * 消费进度集合
+     */
     private ConcurrentMap<String/* topic@group */, ConcurrentMap<Integer, Long>> offsetTable =
         new ConcurrentHashMap<String, ConcurrentMap<Integer, Long>>(512);
 
@@ -117,14 +119,21 @@ public class ConsumerOffsetManager extends ConfigManager {
 
         return groups;
     }
-
+    /**
+     *提交消费进度
+     *@param clientHost 提交client地址
+     *@param group 消费分组
+     *@param topic 主题
+     *@param queueId 队列编号
+     *@param offset 进度（队列位置）
+     */
     public void commitOffset(final String clientHost, final String group, final String topic, final int queueId,
         final long offset) {
         // topic@group
         String key = topic + TOPIC_GROUP_SEPARATOR + group;
         this.commitOffset(clientHost, key, queueId, offset);
     }
-
+    //提交消费进度
     private void commitOffset(final String clientHost, final String key, final int queueId, final long offset) {
         ConcurrentMap<Integer, Long> map = this.offsetTable.get(key);
         if (null == map) {

@@ -21,6 +21,9 @@ import org.apache.rocketmq.common.protocol.heartbeat.SubscriptionData;
 import java.nio.ByteBuffer;
 import java.util.Map;
 
+/**
+ * 消息过滤器默认实现。
+ */
 public class DefaultMessageFilter implements MessageFilter {
 
     private SubscriptionData subscriptionData;
@@ -31,6 +34,7 @@ public class DefaultMessageFilter implements MessageFilter {
 
     @Override
     public boolean isMatchedByConsumeQueue(Long tagsCode, ConsumeQueueExt.CqExtUnit cqExtUnit) {
+        // 消息tagsCode空  || 订阅数据 空
         if (null == tagsCode || null == subscriptionData) {
             return true;
         }
@@ -38,8 +42,9 @@ public class DefaultMessageFilter implements MessageFilter {
         if (subscriptionData.isClassFilterMode()) {
             return true;
         }
-
+        // 订阅表达式 全匹配
         return subscriptionData.getSubString().equals(SubscriptionData.SUB_ALL)
+                // 订阅数据code数组 是否包含 消息tagsCode
             || subscriptionData.getCodeSet().contains(tagsCode.intValue());
     }
 
