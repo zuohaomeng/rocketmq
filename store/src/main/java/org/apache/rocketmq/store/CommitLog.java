@@ -1235,13 +1235,18 @@ public class CommitLog {
 
         return diff;
     }
-
+    //刷盘模式
     abstract class FlushCommitLogService extends ServiceThread {
         protected static final int RETRY_TIMES_OVER = 10;
     }
 
+    /**
+     *
+     */
     class CommitRealTimeService extends FlushCommitLogService {
-
+        /**
+         * 上次 commit 时间戳
+         */
         private long lastCommitTimestamp = 0;
 
         @Override
@@ -1260,6 +1265,7 @@ public class CommitLog {
                 int commitDataThoroughInterval =
                     CommitLog.this.defaultMessageStore.getMessageStoreConfig().getCommitCommitLogThoroughInterval();
 
+                // 当时间满足commitDataThoroughInterval时，即使写入的数量不足commitDataLeastPages，也进行flush
                 long begin = System.currentTimeMillis();
                 if (begin >= (this.lastCommitTimestamp + commitDataThoroughInterval)) {
                     this.lastCommitTimestamp = begin;
@@ -1292,9 +1298,24 @@ public class CommitLog {
             CommitLog.log.info(this.getServiceName() + " service end");
         }
     }
+    //消息插入成功时，异步刷盘时使用。关闭内存字节缓冲区
 
+    /**
+     * 说明：实时 flush线程服务，调用 MappedFile#flush 相关逻辑。
+     * 1.每 flushPhysicQueueThoroughInterval 周期，执行一次 flush 。因为不是每次循环到都能满足 flushCommitLogLeastPages 大小，因此，需要一定周期进行一次强制 flush 。当然，不能每次循环都去执行强制 flush，这样性能较差。
+     * 2.根据 flushCommitLogTimed 参数，可以选择每次循环是固定周期还是等待唤醒。默认配置是后者，所以，每次插入消息完成，会去调用 commitLogService.wakeup() 。
+     * 3.调用 MappedFile 进行 flush。
+     * 4.Broker 关闭时，强制 flush，避免有未刷盘的数据。
+     */
     class FlushRealTimeService extends FlushCommitLogService {
+        /**
+         * 最后flush时间戳
+         */
         private long lastFlushTimestamp = 0;
+        /**
+         * print计时器。
+         * 满足print次数时，调用
+         */
         private long printTimes = 0;
 
         public void run() {
@@ -1312,6 +1333,7 @@ public class CommitLog {
                 boolean printFlushProgress = false;
 
                 // Print flush progress
+                // 当时间满足flushPhysicQueueThoroughInterval时，即使写入的数量不足flushPhysicQueueLeastPages，也进行flush
                 long currentTimeMillis = System.currentTimeMillis();
                 if (currentTimeMillis >= (this.lastFlushTimestamp + flushPhysicQueueThoroughInterval)) {
                     this.lastFlushTimestamp = currentTimeMillis;
@@ -1320,6 +1342,7 @@ public class CommitLog {
                 }
 
                 try {
+                    // 等待执行
                     if (flushCommitLogTimed) {
                         Thread.sleep(interval);
                     } else {
@@ -1409,20 +1432,33 @@ public class CommitLog {
 
     /**
      * GroupCommit Service
+     * 消息插入成功时，同步刷盘时使用。
      */
     class GroupCommitService extends FlushCommitLogService {
+        /**
+         * 写请求队列
+         */
         private volatile List<GroupCommitRequest> requestsWrite = new ArrayList<GroupCommitRequest>();
+        /**
+         * 读请求队列
+         */
         private volatile List<GroupCommitRequest> requestsRead = new ArrayList<GroupCommitRequest>();
 
+        /**
+         * 添加写入请求
+         * @param request
+         */
         public synchronized void putRequest(final GroupCommitRequest request) {
+            // 添加写入请求
             synchronized (this.requestsWrite) {
                 this.requestsWrite.add(request);
             }
+            // 切换读写队列
             if (hasNotified.compareAndSet(false, true)) {
                 waitPoint.countDown(); // notify
             }
         }
-
+        //切换读写队列
         private void swapRequests() {
             List<GroupCommitRequest> tmp = this.requestsWrite;
             this.requestsWrite = this.requestsRead;
@@ -1434,16 +1470,17 @@ public class CommitLog {
                 if (!this.requestsRead.isEmpty()) {
                     for (GroupCommitRequest req : this.requestsRead) {
                         // There may be a message in the next file, so a maximum of
-                        // two times the flush
+                        // two times the flush 可能批量提交的messages，分布在两个MappedFile
                         boolean flushOK = false;
                         for (int i = 0; i < 2 && !flushOK; i++) {
+                            // 是否满足需要flush条件，即请求的offset超过flush的offset
                             flushOK = CommitLog.this.mappedFileQueue.getFlushedWhere() >= req.getNextOffset();
 
                             if (!flushOK) {
                                 CommitLog.this.mappedFileQueue.flush(0);
                             }
                         }
-
+                        // 唤醒等待请求
                         req.wakeupCustomer(flushOK);
                     }
 
@@ -1451,11 +1488,12 @@ public class CommitLog {
                     if (storeTimestamp > 0) {
                         CommitLog.this.defaultMessageStore.getStoreCheckpoint().setPhysicMsgTimestamp(storeTimestamp);
                     }
-
+                    // 清理读取队列
                     this.requestsRead.clear();
                 } else {
                     // Because of individual messages is set to not sync flush, it
                     // will come to this process
+                    // 走到此处的逻辑，相当于发送一条消息，落盘一条消息，实际无批量提交的效果。
                     CommitLog.this.mappedFileQueue.flush(0);
                 }
             }
@@ -1489,7 +1527,7 @@ public class CommitLog {
 
             CommitLog.log.info(this.getServiceName() + " service end");
         }
-
+        //每次执行完，切换读写队列
         @Override
         protected void onWaitEnd() {
             this.swapRequests();
@@ -1509,15 +1547,27 @@ public class CommitLog {
     class DefaultAppendMessageCallback implements AppendMessageCallback {
         // File at the end of the minimum fixed length empty
         private static final int END_FILE_MIN_BLANK_LENGTH = 4 + 4;
+        /**
+         * 存储在内存中的消息编号字节Buffer
+         */
         private final ByteBuffer msgIdMemory;
         private final ByteBuffer msgIdV6Memory;
         // Store the message content
+        //存储在内存中的消息字节Buffer
+        //当消息传递到{@link #doAppend(long, ByteBuffer, int, MessageExtBrokerInner)}方法时，最终写到该参数
         private final ByteBuffer msgStoreItemMemory;
         // The maximum length of the message
+        //消息最大长度
         private final int maxMessageSize;
         // Build Message Key
+        /**
+         * topic+"-"+queueId
+         */
         private final StringBuilder keyBuilder = new StringBuilder();
-
+        /**
+         * host字节buffer
+         * 用于重复计算host的字节内容
+         */
         private final StringBuilder msgIdBuilder = new StringBuilder();
 
         DefaultAppendMessageCallback(final int size) {
@@ -1531,6 +1581,7 @@ public class CommitLog {
             return msgStoreItemMemory;
         }
 
+        //构建消息并写入
         public AppendMessageResult doAppend(final long fileFromOffset, final ByteBuffer byteBuffer, final int maxBlank,
             final MessageExtBrokerInner msgInner) {
             // STORETIMESTAMP + STOREHOSTADDRESS + OFFSET <br>
@@ -1553,6 +1604,7 @@ public class CommitLog {
                 msgId = MessageDecoder.createMessageId(this.msgIdV6Memory, msgInner.getStoreHostBytes(storeHostHolder), wroteOffset);
             }
 
+            // Record ConsumeQueue information 获取队列offset
             // Record ConsumeQueue information
             keyBuilder.setLength(0);
             keyBuilder.append(msgInner.getTopic());
@@ -1580,6 +1632,7 @@ public class CommitLog {
                     break;
             }
 
+            //消息长度
             /**
              * Serialize message
              */
@@ -1680,6 +1733,7 @@ public class CommitLog {
                 case MessageSysFlag.TRANSACTION_NOT_TYPE:
                 case MessageSysFlag.TRANSACTION_COMMIT_TYPE:
                     // The next update ConsumeQueue information
+                    // 更新队列位置
                     CommitLog.this.topicQueueTable.put(key, ++queueOffset);
                     break;
                 default:
@@ -1780,7 +1834,7 @@ public class CommitLog {
 
             return result;
         }
-
+        //重置字节缓冲区
         private void resetByteBuffer(final ByteBuffer byteBuffer, final int limit) {
             byteBuffer.flip();
             byteBuffer.limit(limit);

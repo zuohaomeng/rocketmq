@@ -25,9 +25,16 @@ import org.apache.rocketmq.remoting.annotation.CFNotNull;
 import org.apache.rocketmq.remoting.annotation.CFNullable;
 import org.apache.rocketmq.remoting.exception.RemotingCommandException;
 
+/**
+ * Broker 提供[拉取消息]接口
+ */
 public class PullMessageRequestHeader implements CommandCustomHeader {
+    /**
+     * 消费者分组
+     */
     @CFNotNull
     private String consumerGroup;
+
     @CFNotNull
     private String topic;
     @CFNotNull

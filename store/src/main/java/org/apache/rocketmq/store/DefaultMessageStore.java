@@ -1487,7 +1487,18 @@ public class DefaultMessageStore implements MessageStore {
             dispatcher.dispatch(req);
         }
     }
-
+    /**
+     * 建立 消息位置信息 到 ConsumeQueue
+     *
+     * @param dispatchRequest 有以下属性
+     *  topic 主题
+     *  queueId 队列编号
+     *  offset commitLog存储位置
+     *  size 消息长度
+     *  tagsCode 消息tagsCode
+     *  storeTimestamp 存储时间
+     *  logicOffset 队列位置
+     */
     public void putMessagePositionInfo(DispatchRequest dispatchRequest) {
         ConsumeQueue cq = this.findConsumeQueue(dispatchRequest.getTopic(), dispatchRequest.getQueueId());
         cq.putMessagePositionInfoWrapper(dispatchRequest);
@@ -1543,7 +1554,11 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     class CommitLogDispatcherBuildConsumeQueue implements CommitLogDispatcher {
-
+        /**
+         * 执行调度请求
+         *      1. 非事务消息 或 事务提交消息 建立 消息位置信息 到 ConsumeQueue
+         * @param request
+         */
         @Override
         public void dispatch(DispatchRequest request) {
             final int tranType = MessageSysFlag.getTransactionValue(request.getSysFlag());
@@ -1560,7 +1575,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     class CommitLogDispatcherBuildIndex implements CommitLogDispatcher {
-
+        //建立 索引信息 到 IndexFile
         @Override
         public void dispatch(DispatchRequest request) {
             if (DefaultMessageStore.this.messageStoreConfig.isMessageIndexEnable()) {
@@ -1769,7 +1784,20 @@ public class DefaultMessageStore implements MessageStore {
         }
     }
 
+    //flush ConsumeQueue(消费队列) 线程服务。
+
+    /**
+     * 1.当 retryTimes == RETRY_TIMES_OVER 时，进行强制flush。用于 shutdown 时。
+     * 2.每 flushConsumeQueueThoroughInterval 周期，执行一次 flush 。因为不是每次循环到都能满足 flushConsumeQueueLeastPages 大小，因此，需要一定周期进行一次强制 flush 。当然，不能每次循环都去执行强制 flush，这样性能较差。
+     * 3：flush ConsumeQueue(消费队列)。
+     *            ：MappedFile#落盘。
+     * 4：flush StoreCheckpoint。StoreCheckpoint 的详细解析见：Store初始化与关闭。
+     * 5：每 1000ms 执行一次 flush。如果 wakeup() 时，则会立即进行一次 flush。目前，暂时不存在 wakeup() 的调用。
+     */
     class FlushConsumeQueueService extends ServiceThread {
+        /**
+         *  最后flush时间戳
+         */
         private static final int RETRY_TIMES_OVER = 3;
         private long lastFlushTimestamp = 0;
 
@@ -1838,8 +1866,11 @@ public class DefaultMessageStore implements MessageStore {
         }
     }
 
+    //ConsumeQueue组件
     class ReputMessageService extends ServiceThread {
-
+        /**
+         * 开始重放消息的CommitLog物理位置
+         */
         private volatile long reputFromOffset = 0;
 
         public long getReputFromOffset() {
@@ -1867,10 +1898,18 @@ public class DefaultMessageStore implements MessageStore {
             super.shutdown();
         }
 
+        /**
+         * 剩余需要重放消息字节数
+         * @return
+         */
         public long behind() {
             return DefaultMessageStore.this.commitLog.getMaxOffset() - this.reputFromOffset;
         }
 
+        /**
+         * 是否commitLog需要重放消息
+         * @return
+         */
         private boolean isCommitLogAvailable() {
             return this.reputFromOffset < DefaultMessageStore.this.commitLog.getMaxOffset();
         }
@@ -1887,21 +1926,25 @@ public class DefaultMessageStore implements MessageStore {
                     && this.reputFromOffset >= DefaultMessageStore.this.getConfirmOffset()) {
                     break;
                 }
-
+                // 获取从reputFromOffset开始的commitLog对应的MappeFile对应的MappedByteBuffer
                 SelectMappedBufferResult result = DefaultMessageStore.this.commitLog.getData(reputFromOffset);
                 if (result != null) {
                     try {
                         this.reputFromOffset = result.getStartOffset();
 
+                        // 遍历MappedByteBuffer
                         for (int readSize = 0; readSize < result.getSize() && doNext; ) {
+                            // 生成重放消息重放调度请求
                             DispatchRequest dispatchRequest =
                                 DefaultMessageStore.this.commitLog.checkMessageAndReturnSize(result.getByteBuffer(), false, false);
                             int size = dispatchRequest.getBufferSize() == -1 ? dispatchRequest.getMsgSize() : dispatchRequest.getBufferSize();
 
+                            // 根据请求的结果处理
                             if (dispatchRequest.isSuccess()) {
                                 if (size > 0) {
+                                    // 读取Message
                                     DefaultMessageStore.this.doDispatch(dispatchRequest);
-
+                                    // 通知有新消息
                                     if (BrokerRole.SLAVE != DefaultMessageStore.this.getMessageStoreConfig().getBrokerRole()
                                         && DefaultMessageStore.this.brokerConfig.isLongPollingEnable()) {
                                         DefaultMessageStore.this.messageArrivingListener.arriving(dispatchRequest.getTopic(),
@@ -1912,6 +1955,7 @@ public class DefaultMessageStore implements MessageStore {
 
                                     this.reputFromOffset += size;
                                     readSize += size;
+                                    // 统计
                                     if (DefaultMessageStore.this.getMessageStoreConfig().getBrokerRole() == BrokerRole.SLAVE) {
                                         DefaultMessageStore.this.storeStatsService
                                             .getSinglePutMessageTopicTimesTotal(dispatchRequest.getTopic()).incrementAndGet();
@@ -1919,16 +1963,16 @@ public class DefaultMessageStore implements MessageStore {
                                             .getSinglePutMessageTopicSizeTotal(dispatchRequest.getTopic())
                                             .addAndGet(dispatchRequest.getMsgSize());
                                     }
-                                } else if (size == 0) {
+                                } else if (size == 0) {// 读取到MappedFile文件尾
                                     this.reputFromOffset = DefaultMessageStore.this.commitLog.rollNextFile(this.reputFromOffset);
                                     readSize = result.getSize();
                                 }
-                            } else if (!dispatchRequest.isSuccess()) {
+                            } else if (!dispatchRequest.isSuccess()) {// 读取失败
 
-                                if (size > 0) {
+                                if (size > 0) {// 读取到Message却不是Message
                                     log.error("[BUG]read total count not equals msg total size. reputFromOffset={}", reputFromOffset);
                                     this.reputFromOffset += size;
-                                } else {
+                                } else {// 读取到Blank却不是Blank
                                     doNext = false;
                                     // If user open the dledger pattern or the broker is master node,
                                     // it will not ignore the exception and fix the reputFromOffset variable
