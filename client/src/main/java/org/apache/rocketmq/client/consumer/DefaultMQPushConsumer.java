@@ -711,6 +711,8 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
         }
     }
 
+
+    //注册消息监听器。
     @Override
     @Deprecated
     public void registerMessageListener(MessageListener messageListener) {

@@ -27,6 +27,7 @@ import org.apache.rocketmq.common.ServiceThread;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.common.utils.ThreadUtils;
 
+//拉取消息服务，不断不断不断从 Broker 拉取消息，并提交消费任务到 ConsumeMessageService。
 public class PullMessageService extends ServiceThread {
     private final InternalLogger log = ClientLogger.getLog();
     private final LinkedBlockingQueue<PullRequest> pullRequestQueue = new LinkedBlockingQueue<PullRequest>();
@@ -75,7 +76,7 @@ public class PullMessageService extends ServiceThread {
     public ScheduledExecutorService getScheduledExecutorService() {
         return scheduledExecutorService;
     }
-
+    //执行拉取消息逻辑
     private void pullMessage(final PullRequest pullRequest) {
         final MQConsumerInner consumer = this.mQClientFactory.selectConsumer(pullRequest.getConsumerGroup());
         if (consumer != null) {

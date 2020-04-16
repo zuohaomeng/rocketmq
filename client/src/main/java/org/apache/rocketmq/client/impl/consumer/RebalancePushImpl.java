@@ -80,11 +80,12 @@ public class RebalancePushImpl extends RebalanceImpl {
         // notify broker
         this.getmQClientFactory().sendHeartbeatToAllBrokerWithLock();
     }
-
+    // 同步队列的消费进度，并移除之。
     @Override
     public boolean removeUnnecessaryMessageQueue(MessageQueue mq, ProcessQueue pq) {
         this.defaultMQPushConsumerImpl.getOffsetStore().persist(mq);
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
+        //顺序消费
         if (this.defaultMQPushConsumerImpl.isConsumeOrderly()
             && MessageModel.CLUSTERING.equals(this.defaultMQPushConsumerImpl.messageModel())) {
             try {
@@ -137,6 +138,18 @@ public class RebalancePushImpl extends RebalanceImpl {
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
     }
 
+    /**
+     * CONSUME_FROM_LAST_OFFSET ：第 6 至 29 行 ：
+     * 一个新的消费集群第一次启动从队列的最后位置开始消费。后续再启动接着上次消费的进度开始消费。
+     *
+     * CONSUME_FROM_FIRST_OFFSET ：第 30 至 40 行 ：
+     * 一个新的消费集群第一次启动从队列的最前位置开始消费。后续再启动接着上次消费的进度开始消费。
+     *
+     * CONSUME_FROM_TIMESTAMP ：第 41 至 65 行 ：
+     * 一个新的消费集群第一次启动从指定时间点开始消费。后续再启动接着上次消费的进度开始消费。
+     * @param mq
+     * @return
+     */
     @Override
     public long computePullFromWhere(MessageQueue mq) {
         long result = -1;
@@ -210,7 +223,7 @@ public class RebalancePushImpl extends RebalanceImpl {
 
         return result;
     }
-
+    //发起消息拉取请求。该调用是PushConsumer不断不断不断拉取消息的起点。
     @Override
     public void dispatchPullRequest(List<PullRequest> pullRequestList) {
         for (PullRequest pullRequest : pullRequestList) {

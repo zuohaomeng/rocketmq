@@ -22,16 +22,27 @@ import org.apache.rocketmq.common.ServiceThread;
 import org.apache.rocketmq.logging.InternalLogger;
 
 public class RebalanceService extends ServiceThread {
+    /**
+     * 等待间隔，单位：毫秒
+     */
     private static long waitInterval =
         Long.parseLong(System.getProperty(
             "rocketmq.client.rebalance.waitInterval", "20000"));
     private final InternalLogger log = ClientLogger.getLog();
+    /**
+     * MQClient对象 封装对 Namesrv，Broker 的 API调用，提供给 Producer、Consumer 使用。
+     */
     private final MQClientInstance mqClientFactory;
 
     public RebalanceService(MQClientInstance mqClientFactory) {
         this.mqClientFactory = mqClientFactory;
     }
 
+    /**
+     * 如 第 25 行 等待超时，每 20s 调用一次。
+     * PushConsumer 启动时，调用 rebalanceService#wakeup(...) 触发。
+     * Broker 通知 Consumer 加入 或 移除时，Consumer 响应通知，调用 rebalanceService#wakeup(...) 触发。
+     */
     @Override
     public void run() {
         log.info(this.getServiceName() + " service started");

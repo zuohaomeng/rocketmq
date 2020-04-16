@@ -23,9 +23,11 @@ import org.apache.rocketmq.client.consumer.AllocateMessageQueueStrategy;
 import org.apache.rocketmq.common.message.MessageQueue;
 
 /**
+ * 平均分配可消费的 Broker 对应的消息队列。
  * Computer room Hashing queue algorithm, such as Alipay logic room
  */
 public class AllocateMessageQueueByMachineRoom implements AllocateMessageQueueStrategy {
+    //消费者消费brokerName集合
     private Set<String> consumeridcs;
 
     @Override
@@ -43,7 +45,7 @@ public class AllocateMessageQueueByMachineRoom implements AllocateMessageQueueSt
                 premqAll.add(mq);
             }
         }
-
+        // 平均分配
         int mod = premqAll.size() / cidAll.size();
         int rem = premqAll.size() % cidAll.size();
         int startIndex = mod * currentIndex;
